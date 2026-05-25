@@ -1,3 +1,4 @@
+# database.py
 import sqlite3
 
 class Database:
@@ -41,5 +42,4 @@ class Database:
         return self.cursor.fetchall()
 
     def __del__(self):
-        # Automatically close the connection when the app closes
         self.conn.close()
