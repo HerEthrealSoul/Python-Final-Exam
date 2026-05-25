@@ -1,20 +1,27 @@
 # logic.py
+WORKING_DAYS = 22.0
 
-# Business Constants
-WORKING_DAYS = 30.0
+ROLES = ["IT", "Accounting", "Marketing", "HR", "Manager", "Other"]
 
-def calculate_final_pay(salary, attendance):
-    """Calculates the final pay based on attendance."""
-    return round((salary / WORKING_DAYS) * attendance, 2)
+def calculate_final_pay(salary, attendance, role):
+    """Calculates the final pay based on attendance and role."""
+    if role == "Manager":
+        # Privilege: Managers always receive 100% base salary
+        return round(salary, 2)
+    else:
+        # Regular employees are paid based on attendance proportion
+        return round((salary / WORKING_DAYS) * attendance, 2)
 
-def validate_employee_data(name, attendance_str, salary_str):
+def validate_employee_data(name, role, attendance_str, salary_str):
     """
     Checks if the inputs are valid.
-    Returns a tuple: (is_valid, error_message, attendance_float, salary_float)
     """
-    if not name or not attendance_str or not salary_str:
+    if not name or not role or not attendance_str or not salary_str:
         return False, "All fields are required!", None, None
         
+    if role not in ROLES:
+        return False, "Invalid department/role selected!", None, None
+
     try:
         attendance = float(attendance_str)
         salary = float(salary_str)
@@ -28,4 +35,4 @@ def validate_employee_data(name, attendance_str, salary_str):
         return True, "", attendance, salary
         
     except ValueError:
-        return False, "Attendance and Salary must be numbers!", None, None
+        return False, "Attendance and Salary must be numeric values!", None, None
