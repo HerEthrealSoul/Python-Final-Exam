@@ -1,13 +1,15 @@
-# gui.py
+gui.py
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import tkinter.font as tkfont
 import csv
 from database import Database
 import logic
-
 import cv2
 from PIL import Image, ImageTk
+from fpdf import FPDF
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 class EmployeeTrackerUI:
     def __init__(self, root):
@@ -17,12 +19,12 @@ class EmployeeTrackerUI:
         
         self.db = Database()
         
-        # GUI Variables
         self.id_var = tk.StringVar()
         self.name_var = tk.StringVar()
         self.role_var = tk.StringVar() 
         self.attendance_var = tk.StringVar()
         self.salary_var = tk.StringVar()
+        self.overtime_var = tk.StringVar(value="0")
         
         self.search_var = tk.StringVar()
         self.filter_var = tk.StringVar() 
@@ -31,71 +33,84 @@ class EmployeeTrackerUI:
         self.populate_treeview()
 
     def setup_ui(self):
-        # --- Input Frame ---
-        input_frame = tk.Frame(self.root, padx=20, pady=20)
-        input_frame.pack(side=tk.LEFT, fill=tk.Y)
+        input_frame = tk.LabelFrame(self.root, text=" 📝 Employee Details ", padx=20, pady=20, font=("Arial", 10, "bold"), fg="#333")
+        input_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(20, 10), pady=20)
+        input_frame.columnconfigure(1, weight=1)
 
-        tk.Label(input_frame, text="Name:").grid(row=0, column=0, pady=10, sticky="w")
-        tk.Entry(input_frame, textvariable=self.name_var).grid(row=0, column=1)
+        tk.Label(input_frame, text="Name:").grid(row=0, column=0, pady=10, padx=(0, 10), sticky="w")
+        ttk.Entry(input_frame, textvariable=self.name_var).grid(row=0, column=1, sticky="we")
         
-        # Role Dropdown
-        tk.Label(input_frame, text="Department/Role:").grid(row=1, column=0, pady=10, sticky="w")
+        tk.Label(input_frame, text="Department/Role:").grid(row=1, column=0, pady=10, padx=(0, 10), sticky="w")
         role_combo = ttk.Combobox(input_frame, textvariable=self.role_var, values=logic.ROLES, state="readonly")
-        role_combo.grid(row=1, column=1)
-
+        role_combo.grid(row=1, column=1, sticky="we")
         self.role_var.trace_add("write", self.auto_fill_attendance)
 
-        tk.Label(input_frame, text=f"Days Attended (Max {int(logic.WORKING_DAYS)}):").grid(row=2, column=0, pady=10, sticky="w")
-        tk.Entry(input_frame, textvariable=self.attendance_var).grid(row=2, column=1)
+        tk.Label(input_frame, text=f"Days Attended (Max {int(logic.WORKING_DAYS)}):").grid(row=2, column=0, pady=10, padx=(0, 10), sticky="w")
+        ttk.Entry(input_frame, textvariable=self.attendance_var).grid(row=2, column=1, sticky="we")
 
-        tk.Label(input_frame, text="Base Salary (VND):").grid(row=3, column=0, pady=10, sticky="w")
-        tk.Entry(input_frame, textvariable=self.salary_var).grid(row=3, column=1)
+        tk.Label(input_frame, text="Base Salary (VND/month):").grid(row=3, column=0, pady=10, padx=(0, 10), sticky="w")
+        ttk.Entry(input_frame, textvariable=self.salary_var).grid(row=3, column=1, sticky="we")
 
-        # Buttons
+        tk.Label(input_frame, text="Overtime (Hours):").grid(row=4, column=0, pady=10, padx=(0, 10), sticky="w")
+        ttk.Entry(input_frame, textvariable=self.overtime_var).grid(row=4, column=1, sticky="we")
+
         btn_frame = tk.Frame(input_frame)
-        btn_frame.grid(row=4, column=0, columnspan=2, pady=20)
+        btn_frame.grid(row=5, column=0, columnspan=2, pady=15)
         
         tk.Button(btn_frame, text="Add", width=10, command=self.add_employee).grid(row=0, column=0, padx=5, pady=5)
         tk.Button(btn_frame, text="Update", width=10, command=self.update_employee).grid(row=0, column=1, padx=5, pady=5)
         tk.Button(btn_frame, text="Delete", width=10, command=self.delete_employee).grid(row=1, column=0, padx=5, pady=5)
         tk.Button(btn_frame, text="Clear", width=10, command=self.clear_fields).grid(row=1, column=1, padx=5, pady=5)
         
-        tk.Button(btn_frame, text="Calculate Final Pay", bg="#e0f7fa", command=self.show_pay_breakdown).grid(row=2, column=0, columnspan=2, sticky="we", padx=5, pady=10)
+        tk.Button(btn_frame, text="Calculate Pay", bg="#e0f7fa", command=self.show_pay_breakdown).grid(row=2, column=0, sticky="we", padx=5, pady=5)
+        tk.Button(btn_frame, text="Export PDF Payslip", bg="#ffebee", fg="#c62828", command=self.generate_pdf_payslip).grid(row=2, column=1, sticky="we", padx=5, pady=5)
+        
+        tk.Button(btn_frame, text="Export Excel", bg="#e8f5e9", fg="#2e7d32", command=self.export_to_excel).grid(row=3, column=0, sticky="we", padx=5, pady=5)
+        tk.Button(btn_frame, text="Scanner", bg="#e3f2fd", fg="#0d47a1", command=self.open_attendance_window).grid(row=3, column=1, sticky="we", padx=5, pady=5)
 
-        # --- Data Display Frame ---
-        display_frame = tk.Frame(self.root, padx=20, pady=20)
+        stats_frame = tk.LabelFrame(input_frame, text=" 📊 Quick Statistics ", padx=10, pady=10, font=("Arial", 10, "bold"), fg="#333")
+        stats_frame.grid(row=6, column=0, columnspan=2, sticky="we", pady=10)
+
+        self.stat_emp_var = tk.StringVar(value="Total Employees: 0")
+        self.stat_att_var = tk.StringVar(value="Avg Attendance: 0.0 days")
+        self.stat_pay_var = tk.StringVar(value="Total Payroll: 0 ₫")
+
+        tk.Label(stats_frame, textvariable=self.stat_emp_var, font=("Arial", 10)).pack(anchor="w", pady=2)
+        tk.Label(stats_frame, textvariable=self.stat_att_var, font=("Arial", 10)).pack(anchor="w", pady=2)
+        tk.Label(stats_frame, textvariable=self.stat_pay_var, font=("Arial", 10, "bold"), fg="#d32f2f").pack(anchor="w", pady=2)
+        
+        tk.Button(stats_frame, text="📊 View Charts", command=self.show_charts, bg="#fff3e0", fg="#ef6c00", font=("Arial", 9, "bold")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2, pady=(10, 0))
+        tk.Button(stats_frame, text="🏆 KPI Board", command=self.show_kpi_board, bg="#f3e5f5", fg="#6a1b9a", font=("Arial", 9, "bold")).pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=2, pady=(10, 0))
+
+        display_frame = tk.Frame(self.root, padx=10, pady=20)
         display_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
-        # Search & Filter Frame
-        search_frame = tk.Frame(display_frame)
-        search_frame.pack(fill=tk.X, pady=(0, 10))
+        search_container = tk.Frame(display_frame)
+        search_container.pack(fill=tk.X, pady=(0, 15))
+        
+        search_frame = tk.Frame(search_container)
+        search_frame.pack(anchor="center") 
         
         tk.Label(search_frame, text="Search Name:").pack(side=tk.LEFT)
-        search_entry = tk.Entry(search_frame, textvariable=self.search_var, width=15)
+        search_entry = ttk.Entry(search_frame, textvariable=self.search_var, width=20)
         search_entry.pack(side=tk.LEFT, padx=5)
         search_entry.bind("<Return>", self.apply_filters)
         search_entry.bind("<KeyRelease>", self.apply_filters)
         
-        # Filter Dropdown
         tk.Label(search_frame, text="Filter Role:").pack(side=tk.LEFT, padx=(15, 0))
-        filter_combo = ttk.Combobox(search_frame, textvariable=self.filter_var, values=["All"] + logic.ROLES, state="readonly", width=10)
+        filter_combo = ttk.Combobox(search_frame, textvariable=self.filter_var, values=["All"] + logic.ROLES, state="readonly", width=12)
         filter_combo.pack(side=tk.LEFT, padx=5)
         filter_combo.current(0) 
         filter_combo.bind("<<ComboboxSelected>>", self.apply_filters)
 
-        tk.Button(search_frame, text="Reset", command=self.reset_search).pack(side=tk.LEFT, padx=5)
-        tk.Button(search_frame, text="Export Excel", bg="#e8f5e9", fg="#2e7d32", command=self.export_to_excel).pack(side=tk.LEFT, padx=5)
-        tk.Button(search_frame, text="Open Scanner", bg="#e3f2fd", fg="#0d47a1", command=self.open_attendance_window).pack(side=tk.LEFT, padx=5)
+        tk.Button(search_frame, text="Reset", command=self.reset_search, width=8).pack(side=tk.LEFT, padx=5)
 
-        # Treeview (Table)
-        # Tạo một Frame phụ để chứa Table và Scrollbar cho gọn
         tree_frame = tk.Frame(display_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True)
 
-        all_columns = ("No.", "ID", "Name", "Role", "Attendance", "Salary (VND)", "Final Pay (VND)")
-        visible_columns = ("No.", "Name", "Role", "Attendance", "Salary (VND)", "Final Pay (VND)")
+        all_columns = ("No.", "ID", "Name", "Role", "Attendance", "Salary (VND)", "Final Pay (VND)", "Status")
+        visible_columns = ("No.", "Name", "Role", "Attendance", "Salary (VND)", "Final Pay (VND)", "Status")
         
-        # Tạo thanh cuộn ngang và dọc
         h_scroll = ttk.Scrollbar(tree_frame, orient=tk.HORIZONTAL)
         v_scroll = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL)
         self.tree = ttk.Treeview(
@@ -107,76 +122,64 @@ class EmployeeTrackerUI:
             yscrollcommand=v_scroll.set
         )
         
-        # Cấu hình lệnh cuộn
         h_scroll.config(command=self.tree.xview)
         v_scroll.config(command=self.tree.yview)
 
-        # 4. Sắp xếp vị trí các thành phần bằng giao diện Grid để khít nhau
         self.tree.grid(row=0, column=0, sticky="nsew")
         v_scroll.grid(row=0, column=1, sticky="ns")
         h_scroll.grid(row=1, column=0, sticky="ew")
 
-        # Đảm bảo bảng giãn nở đều trong frame phụ
         tree_frame.grid_rowconfigure(0, weight=1)
         tree_frame.grid_columnconfigure(0, weight=1)
         
         for col in visible_columns:
-            self.tree.heading(col, text=col)
+            self.tree.heading(col, text=col, command=lambda c=col: self.sort_by_column(c, False))
             width = 40 if col == "No." else (70 if col == "Attendance" else (90 if col == "Role" else 110))
             self.tree.column(col, width=width, anchor="center")
         
         self.tree.bind("<ButtonRelease-1>", self.get_selected_row)
         self.tree.bind("<Double-1>", self.auto_resize_column)
 
-    # --- UI Actions ---
     def populate_treeview(self, rows=None):
         self.tree.delete(*self.tree.get_children())
         if rows is None:
             rows = self.db.fetch_all()
-            
         for index, row in enumerate(rows, start=1):
-            db_id, name, role, attendance, salary, _ = row
-            final_pay = logic.calculate_final_pay(salary, attendance, role)
-            self.tree.insert("", tk.END, values=(index, db_id, name, role, attendance, salary, final_pay))
+            db_id, name, role, attendance, salary, last_date, last_time, status, on_time, late, ot = row
+            final_pay = logic.calculate_final_pay(salary, attendance, role, ot)
+            
+            fmt_salary = logic.format_number(salary)
+            fmt_final_pay = logic.format_number(final_pay)
+            self.tree.insert("", tk.END, values=(index, db_id, name, role, attendance, fmt_salary, fmt_final_pay, status))
+        self.update_statistics()
 
     def add_employee(self):
-        is_valid, error_msg, att, sal = logic.validate_employee_data(self.name_var.get(), self.role_var.get(), self.attendance_var.get(), self.salary_var.get())
-        if not is_valid:
-            messagebox.showerror("Error", error_msg)
-            return
-            
-        self.db.insert(self.name_var.get(), self.role_var.get(), att, sal)
-        self.populate_treeview()
-        self.clear_fields()
-        messagebox.showinfo("Success", "Employee added successfully!")
+        is_valid, msg, att, sal, ot = logic.validate_employee_data(self.name_var.get(), self.role_var.get(), self.attendance_var.get(), self.salary_var.get(), self.overtime_var.get())
+        if is_valid:
+            self.db.insert(self.name_var.get(), self.role_var.get(), att, sal, ot)
+            self.populate_treeview()
+            messagebox.showinfo("Success", "Employee added successfully!")
+
+    def update_employee(self):
+        is_valid, msg, att, sal, ot = logic.validate_employee_data(self.name_var.get(), self.role_var.get(), self.attendance_var.get(), self.salary_var.get(), self.overtime_var.get())
+        if is_valid and self.id_var.get():
+            self.db.update(self.id_var.get(), self.name_var.get(), self.role_var.get(), att, sal, ot)
+            self.populate_treeview()
+            messagebox.showinfo("Success", "Updated successfully!")
 
     def get_selected_row(self, event):
         selected = self.tree.focus()
-        if not selected:
-            return
+        if not selected: return
         values = self.tree.item(selected, 'values')
         self.id_var.set(values[1])
         self.name_var.set(values[2])
         self.role_var.set(values[3])
         self.attendance_var.set(values[4])
         self.salary_var.set(values[5])
-
-    def update_employee(self):
-        if not self.id_var.get():
-            messagebox.showerror("Error", "Please select an employee to update!")
-            return
-            
-        is_valid, error_msg, att, sal = logic.validate_employee_data(self.name_var.get(), self.role_var.get(), self.attendance_var.get(), self.salary_var.get())
-        if not is_valid:
-            messagebox.showerror("Error", error_msg)
-            return
-            
-        confirm = messagebox.askyesno("Confirm Update", f"Are you sure you want to update details for {self.name_var.get()}?")
-        if confirm:
-            self.db.update(self.id_var.get(), self.name_var.get(), self.role_var.get(), att, sal)
-            self.populate_treeview()
-            self.clear_fields()
-            messagebox.showinfo("Success", "Employee updated successfully!")
+        
+        for row in self.db.fetch_all():
+            if str(row[0]) == values[1]:
+                self.overtime_var.set(str(row[10]))
 
     def delete_employee(self):
         if not self.id_var.get():
@@ -191,11 +194,10 @@ class EmployeeTrackerUI:
             messagebox.showinfo("Success", "Employee deleted successfully!")
 
     def apply_filters(self, *args):
-        """Lấy giá trị hiện tại của cả ô Search và ô Filter để lọc dữ liệu cùng lúc"""
+        """Lấy giá trị hiện tại của cả ô Search và ô Filter để lọc dữ liệu cùng lúc."""
         current_name = self.search_var.get()
         current_role = self.filter_var.get()
         
-        # Gọi hàm mới trong database
         rows = self.db.search_and_filter(current_name, current_role)
         self.populate_treeview(rows)
 
@@ -210,9 +212,10 @@ class EmployeeTrackerUI:
         self.role_var.set("")
         self.attendance_var.set("")
         self.salary_var.set("")
+        self.overtime_var.set("0")
 
     def auto_fill_attendance(self, *args):
-        """Auto-fill attendance for Managers"""
+        """Tự động điền đủ ngày công cho chức vụ Manager."""
         if self.role_var.get() == "Manager":
             self.attendance_var.set(str(int(logic.WORKING_DAYS)))
 
@@ -266,8 +269,8 @@ class EmployeeTrackerUI:
                         row_values[2],  
                         row_values[3],  
                         row_values[4],  
-                        f"{float(row_values[5]):,.0f}", 
-                        f"{float(row_values[6]):,.0f}"  
+                        f"{float(row_values[5].replace('.', '')):,.0f}", 
+                        f"{float(row_values[6].replace('.', '')):,.0f}"  
                     ]
                     writer.writerow(clean_row)
                     
@@ -277,23 +280,20 @@ class EmployeeTrackerUI:
             messagebox.showerror("Error", f"Could not export file: {str(e)}")
     
     def auto_resize_column(self, event):
-        """Tính năng nâng cao: Double click vào Tiêu đề hoặc Vạch chia để tự giãn cột"""
+        """Tính toán và cập nhật độ rộng cột dựa trên nội dung thực tế (bỏ qua cột ID bị ẩn)."""
         region = self.tree.identify_region(event.x, event.y)
         
         if region in ("separator", "heading"):
             col_id = self.tree.identify_column(event.x)
             display_col_index = int(col_id.replace('#', '')) - 1
             
-            # Cần cả 2 mảng để đối chiếu vị trí thực tế do ta đã ẩn cột ID
-            visible_columns = ("No.", "Name", "Role", "Attendance", "Salary (VND)", "Final Pay (VND)")
-            all_columns = ("No.", "ID", "Name", "Role", "Attendance", "Salary (VND)", "Final Pay (VND)")
+            visible_columns = ("No.", "Name", "Role", "Attendance", "Salary (VND)", "Final Pay (VND)", "Status")
+            all_columns = ("No.", "ID", "Name", "Role", "Attendance", "Salary (VND)", "Final Pay (VND)", "Status")
             
             if display_col_index >= len(visible_columns):
                 return
                 
-            # Tên cột đang được click
             col_name = visible_columns[display_col_index]
-            # VỊ TRÍ THỰC SỰ của dữ liệu trong tuple
             real_data_index = all_columns.index(col_name)
             
             font = tkfont.nametofont("TkDefaultFont")
@@ -302,7 +302,6 @@ class EmployeeTrackerUI:
             for row in self.tree.get_children():
                 row_values = self.tree.item(row, 'values')
                 if row_values:
-                    # Lấy đúng dữ liệu dựa trên real_data_index
                     cell_text = str(row_values[real_data_index])
                     text_width = font.measure(cell_text) + 20
                     if text_width > max_width:
@@ -311,7 +310,7 @@ class EmployeeTrackerUI:
             self.tree.column(col_name, width=max_width, minwidth=max_width, stretch=False)
     
     def open_attendance_window(self):
-        """Mở cửa sổ có tích hợp Camera quét mã QR trực tiếp (Dùng OpenCV nguyên bản)"""
+        """Mở cửa sổ có tích hợp Camera quét mã QR trực tiếp."""
         self.scan_win = tk.Toplevel(self.root)
         self.scan_win.title("Webcam QR Scanner")
         self.scan_win.geometry("450x550")
@@ -320,28 +319,25 @@ class EmployeeTrackerUI:
         
         self.scan_win.protocol("WM_DELETE_WINDOW", self.close_attendance_window)
 
-        tk.Label(self.scan_win, text="MỜI ĐƯA MÃ QR VÀO CAMERA", font=("Arial", 12, "bold"), fg="#1565c0").pack(pady=10)
+        tk.Label(self.scan_win, text="PLEASE SCAN QR CODE", font=("Arial", 12, "bold"), fg="#1565c0").pack(pady=10)
         
         self.video_label = tk.Label(self.scan_win, bg="black", width=400, height=300)
         self.video_label.pack(pady=10)
 
-        tk.Label(self.scan_win, text="Hoặc gõ ID thủ công rồi Enter:", font=("Arial", 10)).pack()
+        tk.Label(self.scan_win, text="Or enter ID manually:", font=("Arial", 10)).pack()
         self.qr_var = tk.StringVar()
         qr_entry = tk.Entry(self.scan_win, textvariable=self.qr_var, font=("Arial", 14), justify="center", width=10)
         qr_entry.pack(pady=5)
         qr_entry.bind("<Return>", lambda event: self.process_check_in(self.qr_var.get()))
 
-        self.status_label = tk.Label(self.scan_win, text="Đang khởi động Camera...", font=("Arial", 10, "italic"), fg="gray")
+        self.status_label = tk.Label(self.scan_win, text="Starting Camera...", font=("Arial", 10, "italic"), fg="gray")
         self.status_label.pack(pady=10)
 
-        # Khởi tạo bộ đọc QR của chính OpenCV (Không cần pyzbar)
         self.qr_detector = cv2.QRCodeDetector()
-
         self.cap = cv2.VideoCapture(0)
         self.update_camera()
 
     def update_camera(self):
-        """Hàm này sẽ chạy liên tục để lấy từng khung hình từ Webcam đưa lên giao diện"""
         if not hasattr(self, 'cap') or not self.cap.isOpened():
             return
 
@@ -349,42 +345,35 @@ class EmployeeTrackerUI:
         if ret:
             frame = cv2.resize(frame, (400, 300))
             
-            # --- AI NHẬN DIỆN MÃ QR BẰNG OPENCV ---
+            # Sử dụng AI của OpenCV để nhận diện và giải mã QR
             data, bbox, _ = self.qr_detector.detectAndDecode(frame)
             
-            # Nếu tìm thấy mã QR (data có chứa dữ liệu)
             if data:
-                # Vẽ khung xanh lá cây bao quanh mã QR
                 if bbox is not None:
                     for i in range(len(bbox[0])):
                         pt1 = tuple(bbox[0][i].astype(int))
                         pt2 = tuple(bbox[0][(i+1) % len(bbox[0])].astype(int))
                         cv2.line(frame, pt1, pt2, (0, 255, 0), 3)
                 
-                # Ép Tkinter dán hình ảnh có khung xanh lên màn hình ngay lập tức!
                 cv_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 pil_img = Image.fromarray(cv_img)
                 self.photo = ImageTk.PhotoImage(image=pil_img)
                 self.video_label.config(image=self.photo)
 
-                # Gửi ID đi điểm danh
                 self.process_check_in(data)
-
                 return
             
-            # --- CHUYỂN ĐỔI HÌNH ẢNH SANG TKINTER ---
             cv_img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(cv_img)
             self.photo = ImageTk.PhotoImage(image=pil_img)
-            
             self.video_label.config(image=self.photo)
 
         self.camera_loop = self.scan_win.after(15, self.update_camera)
 
     def process_check_in(self, raw_id):
-        """Xử lý ID nhận được (từ Camera hoặc từ bàn phím)"""
+        """Xử lý ID nhận được từ Camera hoặc nhập tay."""
         raw_id = str(raw_id).strip()
-        print(f"\n---> [DEBUG] Camera vừa quét được chữ: '{raw_id}'")
+        print(f"\n---> [DEBUG] Camera scanned: '{raw_id}'")
         self.qr_var.set("") 
 
         if not raw_id:
@@ -392,30 +381,213 @@ class EmployeeTrackerUI:
 
         try:
             emp_id = int(raw_id)
-            # Gọi hàm kiểm tra và điểm danh trong database.py
-            success, message = self.db.check_in_employee(emp_id, logic.WORKING_DAYS)
+            success, message, status_type = self.db.check_in_employee(emp_id, logic.WORKING_DAYS)
 
             if success:
-                self.status_label.config(text=message, fg="green")
-                self.populate_treeview() # Làm mới bảng hiển thị chính
+                if status_type == "Late":
+                    self.status_label.config(text=message, fg="red")
+                else:
+                    self.status_label.config(text=message, fg="green")
+                    
+                self.populate_treeview() 
                 
                 self.scan_win.after_cancel(self.camera_loop)
-                self.scan_win.after(2000, self.update_camera)
+                self.scan_win.after(1000, self.update_camera)
             else:
                 self.status_label.config(text=f"Failed: {message}", fg="orange")
-                # Nếu quét thất bại (ví dụ spam), dừng camera lại 2 giây để người dùng đọc thông báo lỗi
                 self.scan_win.after_cancel(self.camera_loop)
-                self.scan_win.after(2000, self.update_camera)
+                self.scan_win.after(1500, self.update_camera)
 
         except ValueError:
-            self.status_label.config(text="Error: QR Code không phải là ID hợp lệ!", fg="red")
+            self.status_label.config(text="Error: Invalid QR Code!", fg="red")
 
     def close_attendance_window(self):
-        """Hàm dọn dẹp bộ nhớ: Cực kỳ quan trọng để tắt đèn Webcam trên Laptop"""
+        """Hàm dọn dẹp giải phóng bộ nhớ và tắt Webcam."""
         if hasattr(self, 'camera_loop'):
             self.scan_win.after_cancel(self.camera_loop)
             
         if hasattr(self, 'cap') and self.cap.isOpened():
-            self.cap.release() # lệnh tắt cam
+            self.cap.release()
             
         self.scan_win.destroy()
+
+    def update_statistics(self):
+        """Tính toán và cập nhật số liệu thống kê tổng quan."""
+        rows = self.tree.get_children()
+        total_emp = len(rows)
+        
+        if total_emp == 0:
+            self.stat_emp_var.set("Total Employees: 0")
+            self.stat_att_var.set("Avg Attendance: 0 days")
+            self.stat_pay_var.set("Total Payroll: 0")
+            return
+            
+        total_att = 0.0
+        total_pay = 0.0
+        
+        for row in rows:
+            values = self.tree.item(row, 'values')
+            try:
+                total_att += float(values[4])
+                clean_pay = str(values[6]).replace(".", "")
+                total_pay += float(clean_pay)
+            except ValueError:
+                pass
+                
+        avg_att = total_att / total_emp
+        
+        self.stat_emp_var.set(f"Total Employees: {total_emp}")
+        self.stat_att_var.set(f"Avg Attendance: {avg_att:.1f} days")
+        self.stat_pay_var.set(f"Total Payroll: {logic.format_number(total_pay)} ₫")
+
+    def sort_by_column(self, col, reverse):
+        """Sắp xếp dữ liệu Treeview khi click vào tiêu đề cột."""
+        data_list = [(self.tree.set(child, col), child) for child in self.tree.get_children('')]
+        
+        try:
+            data_list.sort(key=lambda t: float(t[0].replace('.', '')), reverse=reverse)
+        except ValueError:
+            data_list.sort(reverse=reverse)
+
+        for index, (val, child) in enumerate(data_list):
+            self.tree.move(child, '', index)
+
+        self.tree.heading(col, command=lambda: self.sort_by_column(col, not reverse))
+
+    def generate_pdf_payslip(self):
+        """Tính năng tạo và in phiếu lương ra file PDF."""
+        selected = self.tree.focus()
+        if not selected:
+            messagebox.showwarning("Warning", "Please select an employee from the table to generate a payslip!")
+            return
+
+        values = self.tree.item(selected, 'values')
+        name = values[2]
+        role = values[3]
+        attendance = values[4]
+        base_salary = values[5]
+        final_pay = values[6]
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            initialfile=f"Payslip_{name.replace(' ', '_')}.pdf",
+            filetypes=[("PDF Files", "*.pdf")],
+            title="Save Payslip As"
+        )
+        if not file_path:
+            return
+
+        try:
+            pdf = FPDF()
+            pdf.add_page()
+            
+            pdf.rect(10, 10, 190, 120)
+
+            pdf.set_font("Arial", 'B', 18)
+            pdf.cell(190, 15, txt="OFFICIAL PAYSLIP", ln=True, align='C')
+            pdf.set_font("Arial", 'I', 10)
+            pdf.cell(190, 5, txt="Employee Payroll & Attendance System", ln=True, align='C')
+            pdf.ln(10)
+
+            pdf.set_font("Arial", 'B', 12)
+            
+            data = [
+                ("Employee Name:", name),
+                ("Department/Role:", role),
+                ("Days Attended:", f"{attendance} days"),
+                ("Base Salary:", f"{base_salary} VND")
+            ]
+            
+            for item in data:
+                pdf.cell(60, 10, txt=item[0], border=0)
+                pdf.set_font("Arial", '', 12)
+                pdf.cell(100, 10, txt=item[1], border=0, ln=True)
+                pdf.set_font("Arial", 'B', 12)
+
+            pdf.line(20, 85, 190, 85)
+            pdf.ln(10)
+
+            pdf.set_font("Arial", 'B', 14)
+            pdf.set_text_color(200, 0, 0)
+            pdf.cell(60, 10, txt="FINAL PAY:", border=0)
+            pdf.cell(100, 10, txt=f"{final_pay} VND", border=0, ln=True)
+
+            pdf.output(file_path)
+            messagebox.showinfo("Success", f"PDF Payslip generated successfully at:\n{file_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate PDF:\n{str(e)}")
+
+    def show_charts(self):
+        """Tính năng phân tích và vẽ biểu đồ Data Visualization."""
+        rows = self.tree.get_children()
+        if not rows:
+            messagebox.showwarning("Warning", "No data available to generate charts!")
+            return
+
+        role_counts = {}
+        role_payroll = {}
+
+        for row in rows:
+            values = self.tree.item(row, 'values')
+            role = values[3]
+            clean_pay = float(str(values[6]).replace(".", ""))
+
+            role_counts[role] = role_counts.get(role, 0) + 1
+            role_payroll[role] = role_payroll.get(role, 0.0) + clean_pay
+
+        chart_win = tk.Toplevel(self.root)
+        chart_win.title("Dashboard Analytics - Charts")
+        chart_win.geometry("1000x500")
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
+
+        labels_pie = list(role_counts.keys())
+        sizes_pie = list(role_counts.values())
+        ax1.pie(sizes_pie, labels=labels_pie, autopct='%1.1f%%', startangle=140, colors=plt.cm.Set3.colors)
+        ax1.set_title("Employee Distribution by Role", fontweight="bold")
+
+        labels_bar = list(role_payroll.keys())
+        sizes_bar = list(role_payroll.values())
+        ax2.bar(labels_bar, sizes_bar, color='#4FC3F7')
+        ax2.set_title("Total Payroll by Role (VND)", fontweight="bold")
+        ax2.tick_params(axis='x', rotation=30)
+        
+        ax2.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, loc: "{:,}".format(int(x)).replace(",", ".")))
+        fig.tight_layout()
+
+        canvas = FigureCanvasTkAgg(fig, master=chart_win)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def show_kpi_board(self):
+        """Mở Bảng xếp hạng Kỷ luật (KPI & Performance)."""
+        kpi_win = tk.Toplevel(self.root)
+        kpi_win.title("🏆 Employee KPI & Performance Board")
+        kpi_win.geometry("850x400")
+
+        tk.Label(kpi_win, text="PUNCTUALITY & OVERTIME PERFORMANCE", font=("Arial", 14, "bold"), fg="#4a148c").pack(pady=15)
+
+        columns = ("Name", "Role", "Total Scans", "On Time", "Late", "Punctuality Rate", "Overtime (Hrs)")
+        kpi_tree = ttk.Treeview(kpi_win, columns=columns, show="headings", height=12)
+        
+        for col in columns:
+            kpi_tree.heading(col, text=col)
+            kpi_tree.column(col, width=110, anchor="center")
+            
+        kpi_tree.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+
+        for row in self.db.fetch_all():
+            name = row[1]
+            role = row[2]
+            on_time = row[8]
+            late = row[9]
+            ot = row[10]
+            total_scans = on_time + late
+            
+            if total_scans > 0:
+                punctuality = (on_time / total_scans) * 100
+                rate_str = f"{punctuality:.1f}%"
+            else:
+                rate_str = "No Data"
+
+            kpi_tree.insert("", tk.END, values=(name, role, total_scans, on_time, late, rate_str, ot))
