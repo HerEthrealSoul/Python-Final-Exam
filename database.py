@@ -1,4 +1,3 @@
-#database.py
 import mysql.connector
 import datetime
 
@@ -15,6 +14,7 @@ class Database:
         self.create_table()
 
     def create_table(self):
+        # 1. Bảng lưu thông tin Nhân viên (Giữ nguyên)
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS employees (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -28,6 +28,18 @@ class Database:
                 on_time_count INT DEFAULT 0,
                 late_count INT DEFAULT 0,
                 overtime_hours DOUBLE DEFAULT 0
+            )
+        ''')
+        
+        # 2. BẢNG MỚI: Nhật ký chấm công chi tiết theo từng ngày (Liên kết qua emp_id)
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS attendance_logs (
+                log_id INT AUTO_INCREMENT PRIMARY KEY,
+                emp_id INT,
+                log_date VARCHAR(20),
+                log_time VARCHAR(20),
+                status VARCHAR(50),
+                FOREIGN KEY(emp_id) REFERENCES employees(id) ON DELETE CASCADE
             )
         ''')
         self.conn.commit()
@@ -61,9 +73,8 @@ class Database:
         return self.cursor.fetchall()
 
     def check_in_employee(self, employee_id, max_days):
-        """Xử lý logic điểm danh: Chống spam, kiểm tra giới hạn ngày, và xác định đi muộn/đúng giờ."""
         now = datetime.datetime.now()
-        today_date = now.strftime("%Y-%m-%d")
+        today_date = now.strftime("%Y-%m-%d") # Format: 2026-06-20
         now_time_str = now.strftime("%H:%M:%S")
         
         work_start_time = datetime.time(8, 30, 0) 
@@ -94,11 +105,33 @@ class Database:
         new_ontime = cur_ontime + ontime_add
         new_late = cur_late + late_add
         
+        # A. Cập nhật bảng gốc
         update_query = "UPDATE employees SET attendance = %s, last_checkin_date = %s, last_checkin_time = %s, status = %s, on_time_count = %s, late_count = %s WHERE id = %s"
         self.cursor.execute(update_query, (new_attendance, today_date, now_time_str, status, new_ontime, new_late, employee_id))
+        
+        # B. THÊM LOG VÀO BẢNG NHẬT KÝ (Ghi lại lịch sử)
+        log_query = "INSERT INTO attendance_logs (emp_id, log_date, log_time, status) VALUES (%s, %s, %s, %s)"
+        self.cursor.execute(log_query, (employee_id, today_date, now_time_str, status))
+        
         self.conn.commit()
         
         return True, f"[{now_time_str}] Check-in {status.upper()} for {name}!", status
+
+    # --- HÀM MỚI: LỌC LỊCH SỬ THEO THÁNG/NĂM ---
+    def get_attendance_history(self, month, year):
+        # Tạo chuỗi tìm kiếm (VD: 2026-06-%)
+        search_pattern = f"{year}-{month}-%"
+        
+        # Kỹ thuật JOIN 2 bảng để lấy Tên nhân viên ghép với Lịch sử quét mã
+        query = '''
+            SELECT e.name, e.role, a.log_date, a.log_time, a.status 
+            FROM attendance_logs a
+            JOIN employees e ON a.emp_id = e.id
+            WHERE a.log_date LIKE %s
+            ORDER BY a.log_date DESC, a.log_time DESC
+        '''
+        self.cursor.execute(query, (search_pattern,))
+        return self.cursor.fetchall()
 
     def __del__(self):
         if hasattr(self, 'conn') and self.conn.is_connected():

@@ -1,7 +1,7 @@
 #logic.py
 WORKING_DAYS = 22.0
 
-ROLES = ["IT", "Accounting", "Marketing", "HR", "Manager", "Other"]
+ROLES = ["IT", "Accounting", "Marketing", "HR", "Manager", "Employee","Other"]
 
 def calculate_final_pay(salary, attendance, role, overtime_hours=0):
     """Tính toán lương thực nhận dựa trên ngày công, giờ OT và chức vụ."""

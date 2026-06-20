@@ -1,4 +1,4 @@
-gui.py
+#gui.py
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import tkinter.font as tkfont
@@ -10,12 +10,33 @@ from PIL import Image, ImageTk
 from fpdf import FPDF
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import datetime
 
 class EmployeeTrackerUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Employee Payroll & Attendance Tracker")
-        self.root.geometry("950x600") 
+        self.root.geometry("950x600")
+        self.root.geometry("1050x650")
+        self.root.configure(bg="#F0F2F5")
+
+        self.style = ttk.Style()
+        self.style.theme_use("clam")
+        
+        self.style.configure("Treeview", 
+                             background="#FFFFFF",
+                             foreground="#333333",
+                             rowheight=35,
+                             fieldbackground="#FFFFFF",
+                             font=("Segoe UI", 10))                             
+        
+        self.style.configure("Treeview.Heading", 
+                             font=("Segoe UI", 10, "bold"), 
+                             background="#E2E8F0", 
+                             foreground="#1E293B",
+                             relief="flat")
+                             
+        self.style.map("Treeview", background=[("selected", "#E1EFFE")], foreground=[("selected", "#1E40AF")])
         
         self.db = Database()
         
@@ -31,6 +52,7 @@ class EmployeeTrackerUI:
 
         self.setup_ui()
         self.populate_treeview()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def setup_ui(self):
         input_frame = tk.LabelFrame(self.root, text=" 📝 Employee Details ", padx=20, pady=20, font=("Arial", 10, "bold"), fg="#333")
@@ -54,33 +76,41 @@ class EmployeeTrackerUI:
         tk.Label(input_frame, text="Overtime (Hours):").grid(row=4, column=0, pady=10, padx=(0, 10), sticky="w")
         ttk.Entry(input_frame, textvariable=self.overtime_var).grid(row=4, column=1, sticky="we")
 
-        btn_frame = tk.Frame(input_frame)
-        btn_frame.grid(row=5, column=0, columnspan=2, pady=15)
+        btn_frame = tk.Frame(input_frame, bg=input_frame.cget("bg")) 
+        btn_frame.grid(row=5, column=0, columnspan=2, pady=20)
         
-        tk.Button(btn_frame, text="Add", width=10, command=self.add_employee).grid(row=0, column=0, padx=5, pady=5)
-        tk.Button(btn_frame, text="Update", width=10, command=self.update_employee).grid(row=0, column=1, padx=5, pady=5)
-        tk.Button(btn_frame, text="Delete", width=10, command=self.delete_employee).grid(row=1, column=0, padx=5, pady=5)
-        tk.Button(btn_frame, text="Clear", width=10, command=self.clear_fields).grid(row=1, column=1, padx=5, pady=5)
-        
-        tk.Button(btn_frame, text="Calculate Pay", bg="#e0f7fa", command=self.show_pay_breakdown).grid(row=2, column=0, sticky="we", padx=5, pady=5)
-        tk.Button(btn_frame, text="Export PDF Payslip", bg="#ffebee", fg="#c62828", command=self.generate_pdf_payslip).grid(row=2, column=1, sticky="we", padx=5, pady=5)
-        
-        tk.Button(btn_frame, text="Export Excel", bg="#e8f5e9", fg="#2e7d32", command=self.export_to_excel).grid(row=3, column=0, sticky="we", padx=5, pady=5)
-        tk.Button(btn_frame, text="Scanner", bg="#e3f2fd", fg="#0d47a1", command=self.open_attendance_window).grid(row=3, column=1, sticky="we", padx=5, pady=5)
+        def create_btn(parent, text, bg_color, fg_color, cmd, row, col, width=12, colspan=1):
+            tk.Button(parent, text=text, bg=bg_color, fg=fg_color, command=cmd, width=width,
+                      font=("Segoe UI", 9, "bold"), relief="solid", borderwidth=1, 
+                      cursor="hand2", pady=5).grid(row=row, column=col, columnspan=colspan, padx=5, pady=5, sticky="we")
 
-        stats_frame = tk.LabelFrame(input_frame, text=" 📊 Quick Statistics ", padx=10, pady=10, font=("Arial", 10, "bold"), fg="#333")
+        create_btn(btn_frame, "Add", "#0284C7", "white", self.add_employee, 0, 0)       
+        create_btn(btn_frame, "Update", "#D97706", "white", self.update_employee, 0, 1) 
+        create_btn(btn_frame, "Delete", "#DC2626", "white", self.delete_employee, 1, 0) 
+        create_btn(btn_frame, "Clear", "#475569", "white", self.clear_fields, 1, 1)     
+
+        create_btn(btn_frame, "Export PDF", "#FEF2F2", "#991B1B", self.generate_pdf_payslip, 2, 0) 
+        create_btn(btn_frame, "Export Excel", "#F0FDF4", "#166534", self.export_to_excel, 2, 1) 
+        
+        create_btn(btn_frame, "📸 Scanner", "#EFF6FF", "#1E3A8A", self.open_attendance_window, 3, 0, colspan=2)
+
+        stats_frame = tk.LabelFrame(input_frame, text=" 📊 Quick Statistics ", padx=15, pady=15, font=("Segoe UI", 10, "bold"), fg="#1e293b", bg="white")
         stats_frame.grid(row=6, column=0, columnspan=2, sticky="we", pady=10)
 
         self.stat_emp_var = tk.StringVar(value="Total Employees: 0")
         self.stat_att_var = tk.StringVar(value="Avg Attendance: 0.0 days")
         self.stat_pay_var = tk.StringVar(value="Total Payroll: 0 ₫")
 
-        tk.Label(stats_frame, textvariable=self.stat_emp_var, font=("Arial", 10)).pack(anchor="w", pady=2)
-        tk.Label(stats_frame, textvariable=self.stat_att_var, font=("Arial", 10)).pack(anchor="w", pady=2)
-        tk.Label(stats_frame, textvariable=self.stat_pay_var, font=("Arial", 10, "bold"), fg="#d32f2f").pack(anchor="w", pady=2)
+        tk.Label(stats_frame, textvariable=self.stat_emp_var, font=("Segoe UI", 10), bg="white").pack(anchor="w", pady=2)
+        tk.Label(stats_frame, textvariable=self.stat_att_var, font=("Segoe UI", 10), bg="white").pack(anchor="w", pady=2)
+        tk.Label(stats_frame, textvariable=self.stat_pay_var, font=("Segoe UI", 11, "bold"), fg="#dc2626", bg="white").pack(anchor="w", pady=5)
         
-        tk.Button(stats_frame, text="📊 View Charts", command=self.show_charts, bg="#fff3e0", fg="#ef6c00", font=("Arial", 9, "bold")).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2, pady=(10, 0))
-        tk.Button(stats_frame, text="🏆 KPI Board", command=self.show_kpi_board, bg="#f3e5f5", fg="#6a1b9a", font=("Arial", 9, "bold")).pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=2, pady=(10, 0))
+        btn_container = tk.Frame(stats_frame, bg="white")
+        btn_container.pack(fill=tk.X, pady=(15, 0))
+        
+        tk.Button(btn_container, text="📊 Charts", command=self.show_charts, bg="#FFF7ED", fg="#C2410C", font=("Segoe UI", 9, "bold"), relief="solid", borderwidth=1, cursor="hand2", pady=4).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        tk.Button(btn_container, text="🏆 KPI", command=self.show_kpi_board, bg="#FAF5FF", fg="#7E22CE", font=("Segoe UI", 9, "bold"), relief="solid", borderwidth=1, cursor="hand2", pady=4).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        tk.Button(btn_container, text="📅 History", command=self.show_history_board, bg="#F8FAFC", fg="#334155", font=("Segoe UI", 9, "bold"), relief="solid", borderwidth=1, cursor="hand2", pady=4).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
 
         display_frame = tk.Frame(self.root, padx=10, pady=20)
         display_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -144,13 +174,23 @@ class EmployeeTrackerUI:
         self.tree.delete(*self.tree.get_children())
         if rows is None:
             rows = self.db.fetch_all()
+            
+        # Thêm tag màu xen kẽ
+        self.tree.tag_configure('oddrow', background="#F8FAFC")
+        self.tree.tag_configure('evenrow', background="#FFFFFF")
+
         for index, row in enumerate(rows, start=1):
             db_id, name, role, attendance, salary, last_date, last_time, status, on_time, late, ot = row
             final_pay = logic.calculate_final_pay(salary, attendance, role, ot)
             
             fmt_salary = logic.format_number(salary)
             fmt_final_pay = logic.format_number(final_pay)
-            self.tree.insert("", tk.END, values=(index, db_id, name, role, attendance, fmt_salary, fmt_final_pay, status))
+            
+            # Kiểm tra chẵn lẻ để gắn tag màu
+            tags = ('evenrow',) if index % 2 == 0 else ('oddrow',)
+            
+            self.tree.insert("", tk.END, values=(index, db_id, name, role, attendance, fmt_salary, fmt_final_pay, status), tags=tags)
+            
         self.update_statistics()
 
     def add_employee(self):
@@ -541,18 +581,27 @@ class EmployeeTrackerUI:
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 
+        all_roles = list(role_counts.keys())
+        color_palette = plt.cm.Set3.colors
+        role_color_map = {role: color_palette[i % len(color_palette)] for i, role in enumerate(all_roles)}
+
         labels_pie = list(role_counts.keys())
         sizes_pie = list(role_counts.values())
-        ax1.pie(sizes_pie, labels=labels_pie, autopct='%1.1f%%', startangle=140, colors=plt.cm.Set3.colors)
+        colors_pie = [role_color_map[role] for role in labels_pie] 
+
+        ax1.pie(sizes_pie, labels=labels_pie, autopct='%1.1f%%', startangle=140, colors=colors_pie)
         ax1.set_title("Employee Distribution by Role", fontweight="bold")
 
         labels_bar = list(role_payroll.keys())
         sizes_bar = list(role_payroll.values())
-        ax2.bar(labels_bar, sizes_bar, color='#4FC3F7')
+        colors_bar = [role_color_map[role] for role in labels_bar] 
+
+        bars = ax2.bar(labels_bar, sizes_bar, color=colors_bar) 
         ax2.set_title("Total Payroll by Role (VND)", fontweight="bold")
-        ax2.tick_params(axis='x', rotation=30)
+        ax2.tick_params(axis='x', rotation=30) 
         
         ax2.get_yaxis().set_major_formatter(plt.FuncFormatter(lambda x, loc: "{:,}".format(int(x)).replace(",", ".")))
+
         fig.tight_layout()
 
         canvas = FigureCanvasTkAgg(fig, master=chart_win)
@@ -576,6 +625,7 @@ class EmployeeTrackerUI:
             
         kpi_tree.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
 
+        kpi_data = []
         for row in self.db.fetch_all():
             name = row[1]
             role = row[2]
@@ -588,6 +638,91 @@ class EmployeeTrackerUI:
                 punctuality = (on_time / total_scans) * 100
                 rate_str = f"{punctuality:.1f}%"
             else:
+                punctuality = 0
                 rate_str = "No Data"
 
-            kpi_tree.insert("", tk.END, values=(name, role, total_scans, on_time, late, rate_str, ot))
+            kpi_data.append((name, role, total_scans, on_time, late, rate_str, ot, punctuality))
+
+        kpi_data.sort(key=lambda x: (x[7], x[6], x[2]), reverse=True)
+
+        for data in kpi_data:
+            kpi_tree.insert("", tk.END, values=data[:7])
+
+    def show_history_board(self):
+        """Mở cửa sổ xem Nhật ký điểm danh theo Tháng/Năm."""
+        hist_win = tk.Toplevel(self.root)
+        hist_win.title("📅 Monthly Attendance History")
+        hist_win.geometry("700x500")
+
+        top_frame = tk.Frame(hist_win, pady=15)
+        top_frame.pack(fill=tk.X)
+
+        tk.Label(top_frame, text="Select Month:", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=(20, 5))
+        
+        month_var = tk.StringVar()
+        month_combo = ttk.Combobox(top_frame, textvariable=month_var, values=[f"{i:02d}" for i in range(1, 13)], state="readonly", width=5)
+        month_combo.pack(side=tk.LEFT, padx=5)
+        
+        current_month = datetime.datetime.now().strftime("%m")
+        month_combo.set(current_month)
+
+        tk.Label(top_frame, text="Year:", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=(15, 5))
+        
+        year_var = tk.StringVar()
+        year_combo = ttk.Combobox(top_frame, textvariable=year_var, values=["2024", "2025", "2026", "2027", "2028"], state="readonly", width=8)
+        year_combo.pack(side=tk.LEFT, padx=5)
+        
+        current_year = datetime.datetime.now().strftime("%Y")
+        year_combo.set(current_year)
+
+        tree_frame = tk.Frame(hist_win, padx=20, pady=10)
+        tree_frame.pack(fill=tk.BOTH, expand=True)
+
+        columns = ("Name", "Role", "Date", "Time", "Status")
+        hist_tree = ttk.Treeview(tree_frame, columns=columns, show="headings", height=15)
+        
+        for col in columns:
+            hist_tree.heading(col, text=col)
+            width = 150 if col == "Name" else 100
+            hist_tree.column(col, width=width, anchor="center")
+            
+        hist_tree.pack(fill=tk.BOTH, expand=True)
+        
+        def fetch_history():
+            m = month_var.get()
+            y = year_var.get()
+                        
+            hist_tree.delete(*hist_tree.get_children())
+            
+            logs = self.db.get_attendance_history(m, y)
+            
+            if not logs:
+                messagebox.showinfo("Info", f"No attendance records found for {m}/{y}.", parent=hist_win)
+                return
+                
+            for log in logs:
+                hist_tree.insert("", tk.END, values=log)
+
+        tk.Button(top_frame, text="🔍 Search Logs", command=fetch_history, bg="#1976d2", fg="white", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=20)
+        
+        fetch_history()
+
+    def on_closing(self):
+        """Hàm dọn dẹp toàn bộ tài nguyên phần cứng trước khi thoát app."""
+        if hasattr(self, 'camera_loop'):
+            try:
+                self.scan_win.after_cancel(self.camera_loop)
+            except Exception:
+                pass
+                
+        if hasattr(self, 'cap') and self.cap.isOpened():
+            self.cap.release()
+            
+
+        if hasattr(self, 'db'):
+            del self.db
+            
+        self.root.destroy()
+        
+        import sys
+        sys.exit(0)
